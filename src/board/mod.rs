@@ -369,11 +369,6 @@ impl Board {
     pub fn get_legal_moves(&self, piece_location: SquareSpec) -> Vec<Move> {
         if let Some(piece) = self[piece_location] {
             if piece.color != self.turn {
-                let f = |x| match x {
-                    Color::White => "white",
-                    Color::Black => "black",
-                };
-
                 return vec![];
             }
             legal_moves::enumerate_legal_moves(piece, piece_location, self, true)

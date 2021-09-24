@@ -10,7 +10,6 @@
 #![warn(
     rustdoc::missing_crate_level_docs,
     missing_docs,
-    rustdoc::missing_doc_code_examples,
     absolute_paths_not_starting_with_crate,
     elided_lifetimes_in_paths,
     explicit_outlives_requirements,
@@ -35,7 +34,6 @@
     unreachable_pub,
     unsafe_code,
     unsafe_op_in_unsafe_fn,
-    unstable_features,
     unused_crate_dependencies,
     unused_extern_crates,
     unused_import_braces,
