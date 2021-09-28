@@ -1,63 +1,36 @@
-use gtk::prelude::WidgetExt;
-use relm::{connect, Relm, Update, Widget};
+use gtk::prelude::*;
+use relm::Widget;
 
-struct Model;
+pub struct Model;
 
 #[derive(relm_derive::Msg)]
-enum Message {
+pub enum Message {
     Quit,
 }
 
-struct Window {
-    _model: Model,
-    root: gtk::Window,
-}
+#[relm_derive::widget]
+impl Widget for MainWindow {
+    type Root = gtk::Window;
 
-impl Update for Window {
-    type Model = Model;
-    type ModelParam = ();
-    type Msg = Message;
-
-    fn model(_relm: &relm::Relm<Self>, _param: Self::ModelParam) -> Self::Model {
+    fn model() -> Model {
         Model
     }
 
-    fn update(&mut self, event: Self::Msg) {
+    fn update(&mut self, event: Message) {
         match event {
             Message::Quit => gtk::main_quit(),
         }
     }
-}
 
-impl Widget for Window {
-    type Root = gtk::Window;
+    view! {
+        gtk::Window(gtk::WindowType::Toplevel) {
+            title: "Chess",
 
-    fn root(&self) -> Self::Root {
-        self.root.clone()
-    }
-
-    fn view(relm: &Relm<Self>, model: Self::Model) -> Self {
-        let root = gtk::WindowBuilder::new()
-            .type_(gtk::WindowType::Toplevel)
-            .title("Chess!")
-            .build();
-
-        connect!(
-            relm,
-            root,
-            connect_delete_event(_, _),
-            return (Some(Message::Quit), gtk::Inhibit(false))
-        );
-
-        root.show_all();
-
-        Self {
-            _model: model,
-            root,
+            delete_event(_, _) => (Message::Quit, gtk::Inhibit(false))
         }
     }
 }
 
 fn main() {
-    Window::run(()).unwrap();
+    MainWindow::run(()).unwrap();
 }
