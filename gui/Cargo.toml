@@ -7,6 +7,4 @@ edition = "2021"
 
 [dependencies]
 chess-engine = { path = "../chess-engine" }
-relm = "0.22"
-relm-derive = "0.22"
 gtk = "0.14"
