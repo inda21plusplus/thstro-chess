@@ -7,4 +7,6 @@ edition = "2021"
 
 [dependencies]
 chess-engine = { path = "../chess-engine" }
-gtk = "0.14"
+bevy = "0.5.0"
+bevy_egui = "0.7.0"
+bevy_svg = { git = "https://github.com/Weasy666/bevy_svg", branch = "bevy-0.5" }
