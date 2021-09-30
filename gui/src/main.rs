@@ -37,6 +37,7 @@ fn main() {
         .add_system(pick_up_piece.system())
         .add_system(put_down_piece.system())
         .add_system(move_picked_up_piece_to_cursor.system())
+        .add_system(cancel_holding_piece.system())
         //
         .run();
 }
@@ -173,6 +174,21 @@ fn put_down_piece(
         picked_up_piece.0 = None;
         board_update_event.send(BoardUpdateEvent);
     }
+}
+
+fn cancel_holding_piece(
+    mouse_input: Res<Input<MouseButton>>,
+    kb_input: Res<Input<KeyCode>>,
+    mut picked_up_piece: ResMut<PickedUpPiece>,
+    // picked_up_piece_query: Query<&SquareSpec, Without<ChessSquare>>,
+    // square_query: Query<&SquareSpec, With<ChessSquare>>,
+    mut board_update_event: EventWriter<BoardUpdateEvent>,
+) {
+    if !(mouse_input.just_pressed(MouseButton::Right) || kb_input.just_pressed(KeyCode::Escape)) {
+        return;
+    }
+    picked_up_piece.0 = None;
+    board_update_event.send(BoardUpdateEvent);
 }
 
 fn possible_moves_hover(
