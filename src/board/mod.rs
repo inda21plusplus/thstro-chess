@@ -136,6 +136,11 @@ impl Board {
         }
     }
 
+    /// Get the inner board array
+    pub fn get_board(&self) -> &[[Option<Piece>; 8]; 8] {
+        &self.board
+    }
+
     /// Perform a move and return the next board. Returns [None] if
     /// the move was illegal.
     #[allow(clippy::missing_panics_doc)]
@@ -189,14 +194,14 @@ impl Board {
                         color,
                     } => {
                         reset_halfmove = true;
-                        let dir = match color {
+                        let dir = match color.opposite() {
                             Color::White => SquareDiff::new(1, 0),
                             Color::Black => SquareDiff::new(-1, 0),
                         };
                         if let Some(en_passant) = self.en_passant {
                             if en_passant == to {
                                 debug_assert!(
-                                    new_board[to + dir] == Some(Piece::new(PieceType::Pawn, color)),
+                                    new_board[to + dir] == Some(Piece::new(PieceType::Pawn, color.opposite())),
                                     "The piece taken by en passant wasn't a pawn, this is most likely a bug"
                                 );
                                 new_board[to + dir] = None;
@@ -574,6 +579,21 @@ mod tests {
             parsed.en_passant.unwrap(),
             "g6".parse::<SquareSpec>().unwrap()
         );
+    }
+
+    #[test]
+    fn en_passant_works() {
+        let board = Board::load_fen("8/8/8/4pP2/8/8/8/8 w - e6 0 1").unwrap();
+        let f5: SquareSpec = "f5".parse().unwrap();
+        let e5: SquareSpec = "e5".parse().unwrap();
+        let e6: SquareSpec = "e6".parse().unwrap();
+
+        let new = board
+            .perform_move(Move::Normal { from: f5, to: e6 })
+            .unwrap();
+
+        assert_eq!(new[e6], board[f5], "pawn moved incorrectly");
+        assert!(new[e5].is_none(), "en passant wasn't taken");
     }
 
     // TODO: Tests that need to be written:

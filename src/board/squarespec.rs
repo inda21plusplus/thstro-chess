@@ -183,6 +183,17 @@ impl ops::Add<SquareDiff> for SquareSpec {
     }
 }
 
+impl ops::Sub<SquareDiff> for SquareSpec {
+    type Output = SquareSpec;
+
+    fn sub(self, rhs: SquareDiff) -> SquareSpec {
+        SquareSpec {
+            rank: (self.rank as i32 - rhs.d_rank) as u32,
+            file: (self.file as i32 - rhs.d_file) as u32,
+        }
+    }
+}
+
 impl ops::Add<SquareDiff> for SquareDiff {
     type Output = SquareDiff;
 
