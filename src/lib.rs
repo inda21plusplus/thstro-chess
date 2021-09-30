@@ -101,3 +101,8 @@ pub mod board;
 pub mod error;
 pub mod game;
 pub mod piece;
+
+pub use board::{Board, Move, SquareSpec};
+pub use error::Error;
+pub use game::Game;
+pub use piece::{Color, Piece, PieceType};
