@@ -7,6 +7,7 @@ use bevy::{
 use chess_engine::{
     board::{SquareDiff, SquareSpec},
     game::Game,
+    piece::{Piece, PieceType},
 };
 use std::collections::{HashMap, HashSet};
 
@@ -23,11 +24,10 @@ fn main() {
         // Resources
         .insert_resource(Game::new())
         .init_resource::<PieceAssetMap>()
-        .insert_resource(PickedUpPiece(None))
+        .insert_resource(UIState::Default)
         // Event types
         .add_event::<BoardUpdateEvent>()
         // Startup systems
-        // .add_startup_system(load_assets.system())
         .add_startup_system(setup_game_ui.system())
         // Systems
         .add_system(assign_square_sprites.system())
@@ -37,17 +37,26 @@ fn main() {
         .add_system(pick_up_piece.system())
         .add_system(put_down_piece.system())
         .add_system(move_picked_up_piece_to_cursor.system())
-        .add_system(cancel_holding_piece.system())
+        .add_system(cancel_move.system())
+        .add_system(get_pawn_promotion.system())
         //
         .run();
 }
 
-struct PieceAssetMap(HashMap<chess_engine::piece::Piece, Handle<ColorMaterial>>);
+struct PieceAssetMap(HashMap<Piece, Handle<ColorMaterial>>);
 struct PieceSprite;
+#[derive(Clone, Copy)]
+struct PawnPromotionOption(PieceType);
 struct BoardUpdateEvent;
 struct DiagnosticsInfoText;
-struct PickedUpPiece(Option<Entity>);
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum UIState {
+    Default,
+    PickedUpPiece(Entity),
+    PromotionAsked(SquareSpec, SquareSpec),
+}
 struct PickedUpPieceParent(Entity);
+struct PawnPromotionElement(Entity);
 
 #[derive(Clone, Copy)]
 enum ChessSquare {
@@ -55,6 +64,65 @@ enum ChessSquare {
     Movable,
     Capturable,
     Castlable,
+    Promotable,
+}
+
+fn other_color(color: Option<chess_engine::piece::Color>) -> Option<chess_engine::piece::Color> {
+    match color {
+        Some(chess_engine::piece::Color::White) => Some(chess_engine::piece::Color::Black),
+        Some(chess_engine::piece::Color::Black) => Some(chess_engine::piece::Color::White),
+        None => None,
+    }
+}
+
+fn get_pawn_promotion(
+    mut state: ResMut<UIState>,
+    mut game: ResMut<Game>,
+    pawn_promotion_element: Res<PawnPromotionElement>,
+    mut pawn_promotion_element_query: Query<(&mut Style, &Children)>,
+    pawn_promotion_options_query: Query<(&Interaction, &PawnPromotionOption)>,
+    mut board_update_event: EventWriter<BoardUpdateEvent>,
+) {
+    let (from, to) = if let UIState::PromotionAsked(from, to) = *state {
+        pawn_promotion_element_query
+            .get_mut(pawn_promotion_element.0)
+            .unwrap()
+            .0
+            .display = Display::Flex;
+        (from, to)
+    } else {
+        pawn_promotion_element_query
+            .get_mut(pawn_promotion_element.0)
+            .unwrap()
+            .0
+            .display = Display::None;
+        return;
+    };
+
+    let mut chosen = PieceType::Pawn;
+    for (&interaction, &piece) in pawn_promotion_options_query.iter() {
+        if interaction == Interaction::Clicked {
+            chosen = piece.0;
+        }
+    }
+
+    if chosen == PieceType::Pawn {
+        return;
+    }
+
+    assert_eq!(
+        game.current_board().turn(),
+        game.current_board()[from].unwrap().color
+    );
+
+    game.make_move(chess_engine::board::Move::Promotion {
+        from,
+        to,
+        target: chosen,
+    });
+
+    *state = UIState::Default;
+    board_update_event.send(BoardUpdateEvent);
 }
 
 fn move_picked_up_piece_to_cursor(
@@ -91,10 +159,10 @@ fn pick_up_piece(
     query: Query<(Entity, &Interaction, &SquareSpec), (Changed<Interaction>, With<PieceSprite>)>,
     mut fp_query: Query<&mut FocusPolicy, With<PieceSprite>>,
     chess_game: Res<Game>,
-    mut picked_up_piece: ResMut<PickedUpPiece>,
+    mut state: ResMut<UIState>,
     picked_up_piece_parent: Res<PickedUpPieceParent>,
 ) {
-    if picked_up_piece.0.is_some() {
+    if *state != UIState::Default {
         return;
     }
 
@@ -114,52 +182,57 @@ fn pick_up_piece(
             .entity(entity)
             .remove::<Parent>()
             .insert(Parent(picked_up_piece_parent.0));
-        *picked_up_piece = PickedUpPiece(Some(entity));
+        *state = UIState::PickedUpPiece(entity)
     }
 }
 
 fn put_down_piece(
     query: Query<(&Interaction, &SquareSpec), With<ChessSquare>>,
-    mut picked_up_piece: ResMut<PickedUpPiece>,
-    mut picked_up_piece_query: Query<&mut SquareSpec, Without<ChessSquare>>,
+    mut state: ResMut<UIState>,
+    picked_up_piece_query: Query<&SquareSpec, Without<ChessSquare>>,
     mut chess_game: ResMut<Game>,
     mut board_update_event: EventWriter<BoardUpdateEvent>,
 ) {
-    let piece = match picked_up_piece.0 {
-        Some(p) => p,
-        None => return,
+    let piece = match *state {
+        UIState::PickedUpPiece(p) => p,
+        _ => return,
     };
-    let piece_sq = picked_up_piece_query.get_mut(piece).unwrap();
+    let from_sq = *picked_up_piece_query.get(piece).unwrap();
     let mut target = None;
     for (&interaction, &sq_spec) in query.iter() {
         if interaction == Interaction::Clicked {
             target = Some(sq_spec);
         }
     }
-    let sq = match target {
+    let dst_sq = match target {
         Some(t) => t,
         None => return,
     };
 
-    let mut c = false;
+    let color = chess_game.current_board()[from_sq].map(|p| p.color);
 
-    if sq == *piece_sq
+    // Promotion
+    if Some(dst_sq.rank) == other_color(color).map(|c| c.home_rank()) {
+        *state = UIState::PromotionAsked(from_sq, dst_sq);
+        board_update_event.send(BoardUpdateEvent);
+    } else if dst_sq == from_sq
         || chess_game
             .make_move(chess_engine::board::Move::Normal {
-                from: *piece_sq,
-                to: sq,
+                from: from_sq,
+                to: dst_sq,
             })
             .is_some()
-        || sq - *piece_sq == SquareDiff::new(0, -2)
-            && chess_game.current_board()[*piece_sq].map(|p| p.piece)
+        // Castling
+        || dst_sq - from_sq == SquareDiff::new(0, -2)
+            && chess_game.current_board()[from_sq].map(|p| p.piece)
                 == Some(chess_engine::piece::PieceType::King)
             && chess_game
                 .make_move(chess_engine::board::Move::Castling(
                     chess_engine::board::Castling::Long,
                 ))
                 .is_some()
-        || sq - *piece_sq == SquareDiff::new(0, 2)
-            && chess_game.current_board()[*piece_sq].map(|p| p.piece)
+        || dst_sq - from_sq == SquareDiff::new(0, 2)
+            && chess_game.current_board()[from_sq].map(|p| p.piece)
                 == Some(chess_engine::piece::PieceType::King)
             && chess_game
                 .make_move(chess_engine::board::Move::Castling(
@@ -167,19 +240,15 @@ fn put_down_piece(
                 ))
                 .is_some()
     {
-        c = true;
-    }
-
-    if c {
-        picked_up_piece.0 = None;
+        *state = UIState::Default;
         board_update_event.send(BoardUpdateEvent);
     }
 }
 
-fn cancel_holding_piece(
+fn cancel_move(
     mouse_input: Res<Input<MouseButton>>,
     kb_input: Res<Input<KeyCode>>,
-    mut picked_up_piece: ResMut<PickedUpPiece>,
+    mut state: ResMut<UIState>,
     // picked_up_piece_query: Query<&SquareSpec, Without<ChessSquare>>,
     // square_query: Query<&SquareSpec, With<ChessSquare>>,
     mut board_update_event: EventWriter<BoardUpdateEvent>,
@@ -187,7 +256,7 @@ fn cancel_holding_piece(
     if !(mouse_input.just_pressed(MouseButton::Right) || kb_input.just_pressed(KeyCode::Escape)) {
         return;
     }
-    picked_up_piece.0 = None;
+    *state = UIState::Default;
     board_update_event.send(BoardUpdateEvent);
 }
 
@@ -195,9 +264,9 @@ fn possible_moves_hover(
     piece_query: Query<(&Interaction, &SquareSpec), Changed<Interaction>>,
     mut square_query: Query<(&SquareSpec, &mut ChessSquare)>,
     chess_game: Res<Game>,
-    picked_up_piece: Res<PickedUpPiece>,
+    state: Res<UIState>,
 ) {
-    if picked_up_piece.0.is_some() {
+    if *state != UIState::Default {
         return;
     }
 
@@ -223,19 +292,26 @@ fn possible_moves_hover(
         Some(hovered) => hovered,
         None => return,
     };
+    let color = chess_game.current_board()[hovered].map(|p| p.color);
+    let piece = chess_game.current_board()[hovered].map(|p| p.piece);
     let moves = chess_game.current_board().get_legal_moves(hovered);
     let moves: HashSet<chess_engine::board::Move> = moves.into_iter().collect();
     let destinations: HashSet<SquareSpec> = moves
         .iter()
         .filter_map(|m| match m {
             chess_engine::board::Move::Normal { to, .. } => Some(*to),
+            chess_engine::board::Move::Promotion { to, .. } => Some(*to),
             _ => None,
         })
         .collect();
 
     for (&sq_spec, mut chess_square) in square_query.iter_mut() {
         if destinations.contains(&sq_spec) {
-            if chess_game.current_board()[sq_spec].is_some() {
+            if Some(sq_spec.rank) == other_color(color).map(|c| c.home_rank())
+                && piece == Some(chess_engine::piece::PieceType::Pawn)
+            {
+                *chess_square = ChessSquare::Promotable;
+            } else if chess_game.current_board()[sq_spec].is_some() {
                 *chess_square = ChessSquare::Capturable;
             } else {
                 *chess_square = ChessSquare::Movable;
@@ -269,6 +345,8 @@ fn square_state_color(
             (true, ChessSquare::Movable) => Color::rgb_u8(0xdb, 0xbb, 0x7b),
             (false, ChessSquare::Movable) => Color::rgb_u8(0xca, 0xa1, 0x75),
             (_, ChessSquare::Castlable) => Color::rgb_u8(0x8f, 0xbc, 0xbb),
+            (true, ChessSquare::Promotable) => Color::rgb_u8(0x81, 0xa1, 0xc1),
+            (false, ChessSquare::Promotable) => Color::rgb_u8(0x5e, 0x81, 0xac),
         };
         *material = materials.add(color.into());
     }
@@ -362,8 +440,10 @@ fn setup_game_ui(
     mut board_update_event: EventWriter<BoardUpdateEvent>,
     asset_server: Res<AssetServer>,
     mut materials: ResMut<Assets<ColorMaterial>>,
+    piece_asset_map: Res<PieceAssetMap>,
 ) {
     let mut picked_up_piece_parent = Entity::new(0);
+    let mut pawn_promotion_element = Entity::new(0);
     commands.spawn_bundle(UiCameraBundle::default());
     commands
         .spawn_bundle(NodeBundle {
@@ -458,7 +538,7 @@ fn setup_game_ui(
                     }
                 }
             });
-            let e = root
+            picked_up_piece_parent = root
                 .spawn_bundle(NodeBundle {
                     style: Style {
                         position_type: PositionType::Absolute,
@@ -469,10 +549,49 @@ fn setup_game_ui(
                 })
                 .insert(FocusPolicy::Pass)
                 .id();
-            picked_up_piece_parent = e;
+            pawn_promotion_element = root
+                .spawn_bundle(NodeBundle {
+                    style: Style {
+                        position_type: PositionType::Absolute,
+                        display: Display::None,
+                        ..Default::default()
+                    },
+                    material: materials.add(Color::rgb_u8(0x88, 0xc0, 0xd0).into()),
+                    ..Default::default()
+                })
+                .with_children(|parent| {
+                    for piece in [
+                        PieceType::Bishop,
+                        PieceType::Knight,
+                        PieceType::Queen,
+                        PieceType::Rook,
+                    ] {
+                        parent
+                            .spawn_bundle(NodeBundle {
+                                style: Style {
+                                    // TODO: dynamic size
+                                    size: Size {
+                                        width: Val::Px(80.0),
+                                        height: Val::Px(80.0),
+                                    },
+                                    ..Default::default()
+                                },
+                                material: piece_asset_map.0[&Piece {
+                                    piece,
+                                    color: chess_engine::piece::Color::White,
+                                }]
+                                    .clone(),
+                                ..Default::default()
+                            })
+                            .insert(Interaction::default())
+                            .insert(PawnPromotionOption(piece));
+                    }
+                })
+                .id();
         });
 
     commands.insert_resource(PickedUpPieceParent(picked_up_piece_parent));
+    commands.insert_resource(PawnPromotionElement(pawn_promotion_element));
 
     board_update_event.send(BoardUpdateEvent);
 }
