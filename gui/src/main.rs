@@ -200,7 +200,15 @@ fn put_down_piece(
         UIState::PickedUpPiece(p) => p,
         _ => return,
     };
-    let from_sq = *picked_up_piece_query.get(piece).unwrap();
+    let from_sq = match picked_up_piece_query.get(piece) {
+        Ok(sq) => *sq,
+        // I dont know why this ever errors but this seems to work
+        Err(_) => {
+            *state = UIState::Default;
+            board_update_event.send(BoardUpdateEvent);
+            return;
+        }
+    };
     let mut target = None;
     for (&interaction, &sq_spec) in query.iter() {
         if interaction == Interaction::Clicked {
