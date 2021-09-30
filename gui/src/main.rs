@@ -39,6 +39,7 @@ fn main() {
         .add_system(move_picked_up_piece_to_cursor.system())
         .add_system(cancel_move.system())
         .add_system(get_pawn_promotion.system())
+        .add_system(update_end_game_text.system())
         //
         .run();
 }
@@ -48,6 +49,8 @@ struct PieceSprite;
 #[derive(Clone, Copy)]
 struct PawnPromotionOption(PieceType);
 struct BoardUpdateEvent;
+struct GameEndElement;
+struct GameEndText;
 struct DiagnosticsInfoText;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum UIState {
@@ -399,6 +402,27 @@ impl FromWorld for PieceAssetMap {
     }
 }
 
+fn update_end_game_text(
+    chess_game: Res<Game>,
+    mut board_update_event: EventReader<BoardUpdateEvent>,
+    mut text_query: Query<&mut Text, With<GameEndText>>,
+    mut parent_query: Query<&mut Style, With<GameEndElement>>,
+) {
+    for _ in board_update_event.iter() {
+        match chess_game.board_state() {
+            chess_engine::game::BoardState::Check | chess_engine::game::BoardState::Normal => {
+                parent_query.single_mut().unwrap().display = Display::None;
+                text_query.single_mut().unwrap().sections[0].value.clear();
+            }
+            _ => {
+                parent_query.single_mut().unwrap().display = Display::Flex;
+                text_query.single_mut().unwrap().sections[0].value =
+                    format!("{:?}!", chess_game.board_state());
+            }
+        }
+    }
+}
+
 fn assign_square_sprites(
     mut commands: Commands,
     cells: Query<(Entity, &SquareSpec), With<ChessSquare>>,
@@ -444,6 +468,7 @@ fn setup_game_ui(
 ) {
     let mut picked_up_piece_parent = Entity::new(0);
     let mut pawn_promotion_element = Entity::new(0);
+    let font = asset_server.load("fonts/FiraSans-Bold.otf");
     commands.spawn_bundle(UiCameraBundle::default());
     commands
         .spawn_bundle(NodeBundle {
@@ -501,7 +526,7 @@ fn setup_game_ui(
                                         text: Text::with_section(
                                             "",
                                             TextStyle {
-                                                font: asset_server.load("fonts/FiraSans-Bold.otf"),
+                                                font: font.clone(),
                                                 font_size: 12.0,
                                                 color: Color::WHITE,
                                             },
@@ -538,6 +563,42 @@ fn setup_game_ui(
                     }
                 }
             });
+            root.spawn_bundle(NodeBundle {
+                style: Style {
+                    position_type: PositionType::Absolute,
+                    flex_direction: FlexDirection::RowReverse,
+                    border: Rect {
+                        top: Val::Px(20.0),
+                        left: Val::Px(20.0),
+                        right: Val::Px(20.0),
+                        bottom: Val::Px(20.0),
+                    },
+                    // display: Display::None,
+                    ..Default::default()
+                },
+                material: materials.add(Color::rgb_u8(0xb4, 0x8e, 0xad).into()),
+                ..Default::default()
+            })
+            .with_children(|parent| {
+                parent
+                    .spawn_bundle(TextBundle {
+                        text: Text::with_section(
+                            "",
+                            TextStyle {
+                                font_size: 64.0,
+                                color: Color::WHITE,
+                                font: font.clone(),
+                            },
+                            TextAlignment {
+                                horizontal: HorizontalAlign::Center,
+                                vertical: VerticalAlign::Center,
+                            },
+                        ),
+                        ..Default::default()
+                    })
+                    .insert(GameEndText);
+            })
+            .insert(GameEndElement);
             picked_up_piece_parent = root
                 .spawn_bundle(NodeBundle {
                     style: Style {
@@ -569,7 +630,6 @@ fn setup_game_ui(
                         parent
                             .spawn_bundle(NodeBundle {
                                 style: Style {
-                                    // TODO: dynamic size
                                     size: Size {
                                         width: Val::Px(80.0),
                                         height: Val::Px(80.0),
