@@ -4,11 +4,7 @@ use bevy::{
     render::camera::Camera,
     ui::FocusPolicy,
 };
-use chess_engine::{
-    board::{SquareDiff, SquareSpec},
-    game::Game,
-    piece::{Piece, PieceType},
-};
+use chess_engine::{board::SquareDiff, Game, Piece, PieceType, SquareSpec};
 use std::collections::{HashMap, HashSet};
 
 fn main() {
@@ -70,10 +66,10 @@ enum ChessSquare {
     Promotable,
 }
 
-fn other_color(color: Option<chess_engine::piece::Color>) -> Option<chess_engine::piece::Color> {
+fn other_color(color: Option<chess_engine::Color>) -> Option<chess_engine::Color> {
     match color {
-        Some(chess_engine::piece::Color::White) => Some(chess_engine::piece::Color::Black),
-        Some(chess_engine::piece::Color::Black) => Some(chess_engine::piece::Color::White),
+        Some(chess_engine::Color::White) => Some(chess_engine::Color::Black),
+        Some(chess_engine::Color::Black) => Some(chess_engine::Color::White),
         None => None,
     }
 }
@@ -118,7 +114,7 @@ fn get_pawn_promotion(
         game.current_board()[from].unwrap().color
     );
 
-    game.make_move(chess_engine::board::Move::Promotion {
+    game.make_move(chess_engine::Move::Promotion {
         from,
         to,
         target: chosen,
@@ -228,7 +224,7 @@ fn put_down_piece(
         board_update_event.send(BoardUpdateEvent);
     } else if dst_sq == from_sq
         || chess_game
-            .make_move(chess_engine::board::Move::Normal {
+            .make_move(chess_engine::Move::Normal {
                 from: from_sq,
                 to: dst_sq,
             })
@@ -236,15 +232,15 @@ fn put_down_piece(
         // Castling
         || dst_sq - from_sq == SquareDiff::new(0, -2)
             && chess_game.current_board()[from_sq].map(|p| p.piece)
-                == Some(chess_engine::piece::PieceType::King)
+                == Some(PieceType::King)
             && chess_game
-                .make_move(chess_engine::board::Move::Castling(
+                .make_move(chess_engine::Move::Castling(
                     chess_engine::board::Castling::Long,
                 ))
                 .is_some()
         || dst_sq - from_sq == SquareDiff::new(0, 2)
             && chess_game.current_board()[from_sq].map(|p| p.piece)
-                == Some(chess_engine::piece::PieceType::King)
+                == Some(PieceType::King)
             && chess_game
                 .make_move(chess_engine::board::Move::Castling(
                     chess_engine::board::Castling::Short,
@@ -306,12 +302,12 @@ fn possible_moves_hover(
     let color = chess_game.current_board()[hovered].map(|p| p.color);
     let piece = chess_game.current_board()[hovered].map(|p| p.piece);
     let moves = chess_game.current_board().get_legal_moves(hovered);
-    let moves: HashSet<chess_engine::board::Move> = moves.into_iter().collect();
+    let moves: HashSet<chess_engine::Move> = moves.into_iter().collect();
     let destinations: HashSet<SquareSpec> = moves
         .iter()
         .filter_map(|m| match m {
-            chess_engine::board::Move::Normal { to, .. } => Some(*to),
-            chess_engine::board::Move::Promotion { to, .. } => Some(*to),
+            chess_engine::Move::Normal { to, .. } => Some(*to),
+            chess_engine::Move::Promotion { to, .. } => Some(*to),
             _ => None,
         })
         .collect();
@@ -319,7 +315,7 @@ fn possible_moves_hover(
     for (&sq_spec, mut chess_square) in square_query.iter_mut() {
         if destinations.contains(&sq_spec) {
             if Some(sq_spec.rank) == other_color(color).map(|c| c.home_rank())
-                && piece == Some(chess_engine::piece::PieceType::Pawn)
+                && piece == Some(PieceType::Pawn)
             {
                 *chess_square = ChessSquare::Promotable;
             } else if chess_game.current_board()[sq_spec].is_some() {
@@ -328,11 +324,11 @@ fn possible_moves_hover(
                 *chess_square = ChessSquare::Movable;
             }
         } else if (sq_spec - hovered) == SquareDiff::new(0, -2)
-            && moves.contains(&chess_engine::board::Move::Castling(
+            && moves.contains(&chess_engine::Move::Castling(
                 chess_engine::board::Castling::Long,
             ))
             || (sq_spec - hovered) == SquareDiff::new(0, 2)
-                && moves.contains(&chess_engine::board::Move::Castling(
+                && moves.contains(&chess_engine::Move::Castling(
                     chess_engine::board::Castling::Short,
                 ))
         {
@@ -383,22 +379,19 @@ impl FromWorld for PieceAssetMap {
         let asset_server = world.get_resource::<AssetServer>().unwrap();
         let mut assets = vec![];
         for (color, color_ch) in [
-            (chess_engine::piece::Color::White, 'w'),
-            (chess_engine::piece::Color::Black, 'b'),
+            (chess_engine::Color::White, 'w'),
+            (chess_engine::Color::Black, 'b'),
         ] {
             for (piece, pt_ch) in [
-                (chess_engine::piece::PieceType::Bishop, 'b'),
-                (chess_engine::piece::PieceType::King, 'k'),
-                (chess_engine::piece::PieceType::Knight, 'n'),
-                (chess_engine::piece::PieceType::Pawn, 'p'),
-                (chess_engine::piece::PieceType::Queen, 'q'),
-                (chess_engine::piece::PieceType::Rook, 'r'),
+                (PieceType::Bishop, 'b'),
+                (PieceType::King, 'k'),
+                (PieceType::Knight, 'n'),
+                (PieceType::Pawn, 'p'),
+                (PieceType::Queen, 'q'),
+                (PieceType::Rook, 'r'),
             ] {
                 let path = format!("pieces/{}{}.png", color_ch, pt_ch);
-                assets.push((
-                    chess_engine::piece::Piece { color, piece },
-                    asset_server.load(path.as_str()),
-                ));
+                assets.push((Piece { color, piece }, asset_server.load(path.as_str())));
             }
         }
         let mut materials = world.get_resource_mut::<Assets<ColorMaterial>>().unwrap();
@@ -646,7 +639,7 @@ fn setup_game_ui(
                                 },
                                 material: piece_asset_map.0[&Piece {
                                     piece,
-                                    color: chess_engine::piece::Color::White,
+                                    color: chess_engine::Color::White,
                                 }]
                                     .clone(),
                                 ..Default::default()
