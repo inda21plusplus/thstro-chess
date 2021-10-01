@@ -219,7 +219,9 @@ fn put_down_piece(
     let color = chess_game.current_board()[from_sq].map(|p| p.color);
 
     // Promotion
-    if Some(dst_sq.rank) == other_color(color).map(|c| c.home_rank()) {
+    if Some(dst_sq.rank) == other_color(color).map(|c| c.home_rank())
+        && chess_game.current_board()[from_sq].map(|p| p.piece) == Some(PieceType::Pawn)
+    {
         *state = UIState::PromotionAsked(from_sq, dst_sq);
         board_update_event.send(BoardUpdateEvent);
     } else if dst_sq == from_sq
