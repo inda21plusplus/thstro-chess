@@ -1,5 +1,5 @@
 use super::SquareSpec;
-use crate::piece::PieceType;
+use crate::piece::{Color, PieceType};
 use std::fmt;
 
 /// The general type to represent moves.
@@ -18,6 +18,34 @@ pub enum Move {
         to: SquareSpec,
         target: PieceType,
     },
+}
+
+impl Move {
+    pub fn from(&self, color: Color) -> SquareSpec {
+        match self {
+            Move::Normal { from, .. } | Move::Promotion { from, .. } => *from,
+            Move::Castling(_) => {
+                let rank = color.home_rank();
+                SquareSpec::new(rank, 4)
+            }
+        }
+    }
+
+    pub fn to(&self, color: Color) -> SquareSpec {
+        match self {
+            Move::Normal { to, .. } | Move::Promotion { to, .. } => *to,
+            Move::Castling(c) => {
+                let rank = color.home_rank();
+
+                let kt = match c {
+                    Short => 6,
+                    Long => 2,
+                };
+
+                SquareSpec::new(rank, kt)
+            }
+        }
+    }
 }
 
 impl fmt::Display for Move {
