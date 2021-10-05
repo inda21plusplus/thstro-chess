@@ -7,16 +7,18 @@ use bevy::{
 use chess_engine::{Game, Piece, PieceType, SquareSpec};
 use std::collections::{HashMap, HashSet};
 
+mod net;
+
 fn main() {
     App::build()
         .insert_resource(WindowDescriptor {
             title: "Chess? Yes!".into(),
             ..Default::default()
         })
-        .insert_resource(Msaa { samples: 2 })
         // Plugins
         .add_plugins(DefaultPlugins)
         .add_plugin(FrameTimeDiagnosticsPlugin::default())
+        .add_plugin(net::NetworkPlugin)
         // Resources
         .insert_resource(Game::new())
         .init_resource::<PieceAssetMap>()
@@ -36,6 +38,7 @@ fn main() {
         .add_system(cancel_move.system())
         .add_system(get_pawn_promotion.system())
         .add_system(update_end_game_text.system())
+        .add_system(test.system())
         //
         .run();
 }
@@ -63,6 +66,12 @@ enum ChessSquare {
     Movable,
     Capturable,
     Promotable,
+}
+
+fn test(mut e_r: EventReader<net::MoveReceivedEvent>) {
+    for e in e_r.iter() {
+        println!("{:?}", e);
+    }
 }
 
 fn get_pawn_promotion(
