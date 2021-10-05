@@ -38,8 +38,8 @@ impl Move {
                 let rank = color.home_rank();
 
                 let kt = match c {
-                    Short => 6,
-                    Long => 2,
+                    Castling::Short => 6,
+                    Castling::Long => 2,
                 };
 
                 SquareSpec::new(rank, kt)
