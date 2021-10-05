@@ -62,16 +62,7 @@ enum ChessSquare {
     Normal,
     Movable,
     Capturable,
-    Castlable,
     Promotable,
-}
-
-fn other_color(color: Option<chess_engine::Color>) -> Option<chess_engine::Color> {
-    match color {
-        Some(chess_engine::Color::White) => Some(chess_engine::Color::Black),
-        Some(chess_engine::Color::Black) => Some(chess_engine::Color::White),
-        None => None,
-    }
 }
 
 fn get_pawn_promotion(
@@ -219,7 +210,7 @@ fn put_down_piece(
     let color = chess_game.current_board()[from_sq].map(|p| p.color);
 
     // Promotion
-    if Some(dst_sq.rank) == other_color(color).map(|c| c.home_rank())
+    if Some(dst_sq.rank) == color.map(|c| c.opposite().home_rank())
         && chess_game.current_board()[from_sq].map(|p| p.piece) == Some(PieceType::Pawn)
     {
         *state = UIState::PromotionAsked(from_sq, dst_sq);
@@ -304,19 +295,11 @@ fn possible_moves_hover(
     let color = chess_game.current_board()[hovered].map(|p| p.color);
     let piece = chess_game.current_board()[hovered].map(|p| p.piece);
     let moves = chess_game.current_board().get_legal_moves(hovered);
-    let moves: HashSet<chess_engine::Move> = moves.into_iter().collect();
-    let destinations: HashSet<SquareSpec> = moves
-        .iter()
-        .filter_map(|m| match m {
-            chess_engine::Move::Normal { to, .. } => Some(*to),
-            chess_engine::Move::Promotion { to, .. } => Some(*to),
-            _ => None,
-        })
-        .collect();
+    let destinations: HashSet<SquareSpec> = moves.iter().map(|m| m.to(color.unwrap())).collect();
 
     for (&sq_spec, mut chess_square) in square_query.iter_mut() {
         if destinations.contains(&sq_spec) {
-            if Some(sq_spec.rank) == other_color(color).map(|c| c.home_rank())
+            if Some(sq_spec.rank) == color.map(|c| c.opposite().home_rank())
                 && piece == Some(PieceType::Pawn)
             {
                 *chess_square = ChessSquare::Promotable;
@@ -325,16 +308,6 @@ fn possible_moves_hover(
             } else {
                 *chess_square = ChessSquare::Movable;
             }
-        } else if (sq_spec - hovered) == SquareDiff::new(0, -2)
-            && moves.contains(&chess_engine::Move::Castling(
-                chess_engine::board::Castling::Long,
-            ))
-            || (sq_spec - hovered) == SquareDiff::new(0, 2)
-                && moves.contains(&chess_engine::Move::Castling(
-                    chess_engine::board::Castling::Short,
-                ))
-        {
-            *chess_square = ChessSquare::Castlable;
         }
     }
 }
@@ -353,7 +326,6 @@ fn square_state_color(
             (false, ChessSquare::Capturable) => Color::rgb_u8(0xbf, 0x61, 0x6a),
             (true, ChessSquare::Movable) => Color::rgb_u8(0xdb, 0xbb, 0x7b),
             (false, ChessSquare::Movable) => Color::rgb_u8(0xca, 0xa1, 0x75),
-            (_, ChessSquare::Castlable) => Color::rgb_u8(0x8f, 0xbc, 0xbb),
             (true, ChessSquare::Promotable) => Color::rgb_u8(0x81, 0xa1, 0xc1),
             (false, ChessSquare::Promotable) => Color::rgb_u8(0x5e, 0x81, 0xac),
         };
@@ -488,7 +460,7 @@ fn setup_game_ui(
             root.spawn_bundle(NodeBundle {
                 style: Style {
                     size: Size::new(Val::Undefined, Val::Percent(80.0)),
-                    aspect_ratio: Some(0.8), // i dont know why but this makes it a square
+                    aspect_ratio: Some(0.8), // somehow this makes it a square
                     ..Default::default()
                 },
                 material: materials.add(Color::rgb_u8(40, 40, 40).into()),
