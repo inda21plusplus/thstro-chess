@@ -4,7 +4,7 @@ use bevy::{
     render::camera::Camera,
     ui::FocusPolicy,
 };
-use chess_engine::{board::SquareDiff, Game, Piece, PieceType, SquareSpec};
+use chess_engine::{Game, Piece, PieceType, SquareSpec};
 use std::collections::{HashMap, HashSet};
 
 fn main() {
@@ -180,14 +180,14 @@ fn put_down_piece(
     query: Query<(&Interaction, &SquareSpec), With<ChessSquare>>,
     mut state: ResMut<UIState>,
     picked_up_piece_query: Query<&SquareSpec, Without<ChessSquare>>,
-    mut chess_game: ResMut<Game>,
+    mut game: ResMut<Game>,
     mut board_update_event: EventWriter<BoardUpdateEvent>,
 ) {
     let piece = match *state {
         UIState::PickedUpPiece(p) => p,
         _ => return,
     };
-    let from_sq = match picked_up_piece_query.get(piece) {
+    let from = match picked_up_piece_query.get(piece) {
         Ok(sq) => *sq,
         // I dont know why this ever errors but this seems to work
         Err(_) => {
@@ -196,51 +196,34 @@ fn put_down_piece(
             return;
         }
     };
-    let mut target = None;
+    let mut to = None;
     for (&interaction, &sq_spec) in query.iter() {
         if interaction == Interaction::Clicked {
-            target = Some(sq_spec);
+            to = Some(sq_spec);
         }
     }
-    let dst_sq = match target {
+    let to = match to {
         Some(t) => t,
         None => return,
     };
 
-    let color = chess_game.current_board()[from_sq].map(|p| p.color);
+    let piece = game.current_board()[from].unwrap();
 
-    // Promotion
-    if Some(dst_sq.rank) == color.map(|c| c.opposite().home_rank())
-        && chess_game.current_board()[from_sq].map(|p| p.piece) == Some(PieceType::Pawn)
-    {
-        *state = UIState::PromotionAsked(from_sq, dst_sq);
-        board_update_event.send(BoardUpdateEvent);
-    } else if dst_sq == from_sq
-        || chess_game
-            .make_move(chess_engine::Move::Normal {
-                from: from_sq,
-                to: dst_sq,
-            })
-            .is_some()
-        // Castling
-        || dst_sq - from_sq == SquareDiff::new(0, -2)
-            && chess_game.current_board()[from_sq].map(|p| p.piece)
-                == Some(PieceType::King)
-            && chess_game
-                .make_move(chess_engine::Move::Castling(
-                    chess_engine::board::Castling::Long,
-                ))
-                .is_some()
-        || dst_sq - from_sq == SquareDiff::new(0, 2)
-            && chess_game.current_board()[from_sq].map(|p| p.piece)
-                == Some(PieceType::King)
-            && chess_game
-                .make_move(chess_engine::board::Move::Castling(
-                    chess_engine::board::Castling::Short,
-                ))
-                .is_some()
-    {
+    if from == to {
         *state = UIState::Default;
+        board_update_event.send(BoardUpdateEvent);
+    } else if let Some(move_) = chess_engine::Move::new(piece, from, to) {
+        if game.make_move(move_).is_some() {
+            *state = UIState::Default;
+            board_update_event.send(BoardUpdateEvent);
+        }
+    } else if game
+        .current_board()
+        .get_legal_moves(from)
+        .iter()
+        .any(|m| m.to(piece.color) == to)
+    {
+        *state = UIState::PromotionAsked(from, to);
         board_update_event.send(BoardUpdateEvent);
     }
 }

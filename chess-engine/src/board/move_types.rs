@@ -1,5 +1,5 @@
 use super::SquareSpec;
-use crate::piece::{Color, PieceType};
+use crate::{Color, Piece, PieceType};
 use std::fmt;
 
 /// The general type to represent moves.
@@ -21,6 +21,19 @@ pub enum Move {
 }
 
 impl Move {
+    /// bada bing bada bong, if it's promotion it returns non
+    pub fn new(piece: Piece, from: SquareSpec, to: SquareSpec) -> Option<Self> {
+        if piece.piece == PieceType::King && (to - from).d_file == 2 {
+            Some(Self::Castling(Castling::Short))
+        } else if piece.piece == PieceType::King && (to - from).d_file == -2 {
+            Some(Self::Castling(Castling::Long))
+        } else if piece.piece == PieceType::Pawn && to.rank == piece.color.opposite().home_rank() {
+            None
+        } else {
+            Some(Self::Normal { from, to })
+        }
+    }
+    /// The `from` square of the move.
     pub fn from(&self, color: Color) -> SquareSpec {
         match self {
             Move::Normal { from, .. } | Move::Promotion { from, .. } => *from,
@@ -30,7 +43,7 @@ impl Move {
             }
         }
     }
-
+    /// The destination of the move.
     pub fn to(&self, color: Color) -> SquareSpec {
         match self {
             Move::Normal { to, .. } | Move::Promotion { to, .. } => *to,
